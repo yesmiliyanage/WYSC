@@ -6,6 +6,7 @@ from config import get_supabase_client
 from middleware.auth_middleware import require_auth
 from models.enums import ChallengeStatus, QueueStatus
 from services import llm_service
+from utils import parse_datetime
 
 match_bp = Blueprint("match", __name__)
 
@@ -81,7 +82,9 @@ def join_queue():
         if existing.data:
             return jsonify({"error": "You are already in the matchmaking queue."}), 400
 
-        # Attempt immediate match: find a waiting queue entry with calories ±50
+        # Attempt immediate match: find a waiting queue entry within calories ±50
+        # and joined within the last QUEUE_EXPIRY_MINUTES (exclude stale/ghost entries)
+        queue_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=QUEUE_EXPIRY_MINUTES)).isoformat()
         queue_resp = (
             supabase.table("matchmaking_queue")
             .select("*")
@@ -89,6 +92,7 @@ def join_queue():
             .neq("user_id", user_id)
             .gte("calories", calories - CALORIE_MATCH_RANGE)
             .lte("calories", calories + CALORIE_MATCH_RANGE)
+            .gte("created_at", queue_cutoff)
             .limit(1)
             .execute()
         )
@@ -263,7 +267,7 @@ def match_status(queue_id):
 
         # Auto-expire if waiting too long
         if entry["status"] == QueueStatus.WAITING.value:
-            created = datetime.fromisoformat(entry["created_at"])
+            created = parse_datetime(entry["created_at"])
             if datetime.now(timezone.utc) > created + timedelta(minutes=QUEUE_EXPIRY_MINUTES):
                 supabase.table("matchmaking_queue").update(
                     {"status": QueueStatus.EXPIRED.value}

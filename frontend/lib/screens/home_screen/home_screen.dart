@@ -97,21 +97,21 @@ class _HomeScreenState extends State<HomeScreen>
         if (permission == LocationPermission.denied) {
           permission = await Geolocator.requestPermission();
         }
-        
-        if (permission == LocationPermission.whileInUse || 
+
+        if (permission == LocationPermission.whileInUse ||
             permission == LocationPermission.always) {
           final position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.medium,
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+            ),
           );
           latitude = position.latitude;
           longitude = position.longitude;
         }
-      } catch (locError) {
-        print('Location error (using default): $locError');
+      } catch (_) {
+        // Location unavailable — fall back to default coordinates.
       }
 
-      print('Submitting crave with lat: $latitude, lng: $longitude');
-      
       final data = await ApiService().submitCrave(
         _cravingController.text.trim(),
         latitude,
@@ -120,14 +120,9 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (!mounted) return;
 
-      print('API Response data: $data');
-
       final sessionId = data['session_id'] as String? ?? '';
       final rawOptions = data['options'];
-      
-      print('Raw options type: ${rawOptions.runtimeType}');
-      print('Raw options value: $rawOptions');
-      
+
       List<Map<String, dynamic>> options = [];
       if (rawOptions != null && rawOptions is List) {
         for (var o in rawOptions) {
@@ -140,8 +135,6 @@ class _HomeScreenState extends State<HomeScreen>
           }
         }
       }
-      
-      print('Parsed options: $options');
 
       Navigator.push(
         context,
@@ -164,7 +157,6 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      print('Error in _findOptions: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),

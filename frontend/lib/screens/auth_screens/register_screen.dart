@@ -115,15 +115,15 @@ class _SignUpScreenState extends State<SignUpScreen>
   }
 
   Future<void> _handleGoogleSignUp() async {
-    setState(() => _isLoading = true);
-
-    // Simulate Google sign up
-    await Future.delayed(const Duration(seconds: 2));
-
-    setState(() => _isLoading = false);
-
-    // Navigate to onboarding
-    // Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => OnboardingFlow()));
+    // Google OAuth via Supabase is not yet configured.
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Google sign-up is not available yet. Please use email and password.'),
+        backgroundColor: Color(0xFFFF8F00),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override

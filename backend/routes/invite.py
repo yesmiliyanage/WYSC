@@ -6,6 +6,7 @@ from flask import Blueprint, g, jsonify, request
 from config import get_supabase_client
 from middleware.auth_middleware import require_auth
 from models.enums import ChallengeStatus, InvitationStatus
+from utils import parse_datetime
 
 invite_bp = Blueprint("invite", __name__)
 
@@ -161,7 +162,7 @@ def view_invite(token):
         invitation = inv_resp.data[0]
 
         # Check expiry
-        expiry = datetime.fromisoformat(invitation["expiry_time"])
+        expiry = parse_datetime(invitation["expiry_time"])
         now = datetime.now(timezone.utc)
         if now > expiry:
             # Mark as expired if still pending
@@ -258,7 +259,7 @@ def respond_to_invite():
         invitation = inv_resp.data[0]
 
         # Verify not expired
-        expiry = datetime.fromisoformat(invitation["expiry_time"])
+        expiry = parse_datetime(invitation["expiry_time"])
         if datetime.now(timezone.utc) > expiry:
             if invitation["status"] == InvitationStatus.PENDING.value:
                 supabase.table("invitations").update(
@@ -375,7 +376,7 @@ def invite_status(invitation_id):
 
         # Auto-expire if past expiry and still pending
         if invitation["status"] == InvitationStatus.PENDING.value:
-            expiry = datetime.fromisoformat(invitation["expiry_time"])
+            expiry = parse_datetime(invitation["expiry_time"])
             if datetime.now(timezone.utc) > expiry:
                 supabase.table("invitations").update(
                     {"status": InvitationStatus.EXPIRED.value}

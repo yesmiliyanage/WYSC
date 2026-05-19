@@ -6,6 +6,7 @@ from config import get_supabase_client
 from middleware.auth_middleware import require_auth
 from models.enums import SessionType
 from services import llm_service, places_service
+from utils import upsert_preference
 
 session_bp = Blueprint("session", __name__)
 
@@ -780,7 +781,7 @@ def accept_healthy():
         # Log preference
         original_crave = session.get("crave_item", "")
         category = original_crave.split(" ")[-1].lower() if original_crave else "healthy"
-        _upsert_preference(supabase, g.user_id, category, selected)
+        upsert_preference(supabase, g.user_id, category, selected)
 
         # Look up rank
         rank_resp = (
@@ -807,27 +808,3 @@ def accept_healthy():
         return jsonify({"error": str(exc)}), 500
 
 
-def _upsert_preference(supabase, user_id: str, category: str, item: str):
-    """Increment order_count if preference exists, otherwise create it."""
-    from datetime import datetime, timezone
-    existing = (
-        supabase.table("user_preferences")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("category", category)
-        .eq("item", item)
-        .execute()
-    )
-    if existing.data:
-        pref = existing.data[0]
-        supabase.table("user_preferences").update({
-            "order_count": pref["order_count"] + 1,
-            "last_ordered": datetime.now(timezone.utc).isoformat(),
-        }).eq("preference_id", pref["preference_id"]).execute()
-    else:
-        supabase.table("user_preferences").insert({
-            "user_id": user_id,
-            "category": category,
-            "item": item,
-            "order_count": 1,
-        }).execute()

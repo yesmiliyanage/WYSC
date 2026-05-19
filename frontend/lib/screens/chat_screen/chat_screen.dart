@@ -76,41 +76,43 @@ class _ChatScreenState extends State<ChatScreen>
     });
 
     try {
-      // Get user's current location
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permission denied');
-        }
-      }
-      
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions are permanently denied');
-      }
+      // Get user's current location, fall back to Colombo if unavailable.
+      double latitude = 6.9271;
+      double longitude = 79.8612;
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
+      try {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.whileInUse ||
+            permission == LocationPermission.always) {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+            ),
+          );
+          latitude = position.latitude;
+          longitude = position.longitude;
+        }
+      } catch (_) {
+        // Location unavailable — fall back to default coordinates.
+      }
 
       // Call the API to get craving options
       final response = await ApiService().submitCrave(
         _cravingController.text.trim(),
-        position.latitude,
-        position.longitude,
+        latitude,
+        longitude,
       );
 
       if (!mounted) return;
 
-      // Debug: print the response to see what we're getting
-      print('API Response: $response');
-
       final sessionId = response['session_id'] as String? ?? '';
-      
-      // Handle options - they might be nested or in a different format
+
       List<Map<String, dynamic>> options = [];
       final rawOptions = response['options'];
-      
+
       if (rawOptions != null && rawOptions is List) {
         for (var item in rawOptions) {
           if (item is Map<String, dynamic>) {
@@ -120,8 +122,6 @@ class _ChatScreenState extends State<ChatScreen>
           }
         }
       }
-      
-      print('Parsed options: $options');
 
       // Navigate to options screen
       Navigator.push(
