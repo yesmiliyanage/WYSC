@@ -4,7 +4,9 @@ import 'package:frontend/screens/splash_screen/splash_screen.dart';
 import 'package:frontend/screens/auth_screens/login_screen.dart';
 import 'package:frontend/services/api_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiService().init();
   runApp(const MyApp());
 }
 

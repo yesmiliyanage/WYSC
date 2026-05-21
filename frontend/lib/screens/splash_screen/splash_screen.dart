@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
-import 'package:frontend/screens/onboarding_screen/onboarding_screens.dart';
+import 'package:frontend/main_navigation.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -56,12 +56,12 @@ class _SplashScreenState extends State<SplashScreen>
       _fadeController.forward();
     });
 
-    // Navigate to onboarding after 3 seconds
+    // Navigate directly to the main app after 3 seconds — no login required
     Timer(const Duration(seconds: 3), () {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              const OnboardingFlow(),
+              const MainNavigationScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },

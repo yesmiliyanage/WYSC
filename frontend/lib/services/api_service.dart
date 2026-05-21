@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 
 class ApiException implements Exception {
@@ -17,21 +19,52 @@ class ApiService {
   ApiService._internal();
 
   String get baseUrl => AppConfig.baseUrl;
-  String? _accessToken;
-  String? _refreshToken;
+
   String? _userId;
   String? _userName;
-  String? _userEmail;
 
-  bool get isLoggedIn => _accessToken != null;
-  String? get userId => _userId;
+  String? get userId   => _userId;
   String? get userName => _userName;
-  String? get userEmail => _userEmail;
-  String? get accessToken => _accessToken;
+  bool    get isLoggedIn => _userId != null;
+
+  // ─── Initialisation ───────────────────────────────────
+  // Called once in main() before runApp().  Loads (or generates) a
+  // persistent UUID that identifies this device across sessions.
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userId = prefs.getString('user_id');
+    if (_userId == null) {
+      _userId = _generateUuid();
+      await prefs.setString('user_id', _userId!);
+    }
+    _userName = prefs.getString('user_name') ?? 'User';
+  }
+
+  Future<void> setUserName(String name) async {
+    _userName = name;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', name);
+  }
+
+  // ─── UUID generator ───────────────────────────────────
+
+  String _generateUuid() {
+    final rng   = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    bytes[6]    = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8]    = (bytes[8] & 0x3f) | 0x80; // variant
+    final hex   = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+           '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+           '${hex.substring(20)}';
+  }
+
+  // ─── HTTP headers ─────────────────────────────────────
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+        if (_userId != null) 'X-User-ID': _userId!,
       };
 
   // ─── Private HTTP helpers with timeout ────────────────
@@ -40,7 +73,8 @@ class ApiService {
       http.get(Uri.parse('$baseUrl$path'), headers: _headers)
           .timeout(AppConfig.requestTimeout);
 
-  Future<http.Response> _post(String path, {Object? body, Map<String, String>? headers}) =>
+  Future<http.Response> _post(String path,
+          {Object? body, Map<String, String>? headers}) =>
       http.post(
         Uri.parse('$baseUrl$path'),
         headers: headers ?? _headers,
@@ -58,84 +92,12 @@ class ApiService {
 
   Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = body['data'] as Map<String, dynamic>?;
       return data ?? body;
     }
-
     final error = body['error'] ?? 'Something went wrong';
     throw ApiException(error.toString(), statusCode: response.statusCode);
-  }
-
-  // ─── Auth ─────────────────────────────────────────────
-
-  Future<Map<String, dynamic>> signup(
-      String email, String password, String name) async {
-    final response = await _post(
-      '/auth/signup',
-      headers: {'Content-Type': 'application/json'},
-      body: {'email': email, 'password': password, 'name': name},
-    );
-
-    final data = await _handleResponse(response);
-
-    final session = data['session'] as Map<String, dynamic>?;
-    if (session != null) {
-      _accessToken = session['access_token'] as String?;
-      _refreshToken = session['refresh_token'] as String?;
-    }
-
-    final user = data['user'] as Map<String, dynamic>?;
-    if (user != null) {
-      _userId = user['id'] as String?;
-      _userName = user['full_name'] as String? ?? name;
-      _userEmail = user['email'] as String?;
-    }
-
-    return data;
-  }
-
-  Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _post(
-      '/auth/login',
-      headers: {'Content-Type': 'application/json'},
-      body: {'email': email, 'password': password},
-    );
-
-    final data = await _handleResponse(response);
-
-    final session = data['session'] as Map<String, dynamic>?;
-    if (session != null) {
-      _accessToken = session['access_token'] as String?;
-      _refreshToken = session['refresh_token'] as String?;
-    }
-
-    final user = data['user'] as Map<String, dynamic>?;
-    if (user != null) {
-      _userId = user['id'] as String?;
-      _userName = user['full_name'] as String? ?? '';
-      _userEmail = user['email'] as String?;
-    }
-
-    return data;
-  }
-
-  Future<void> logout() async {
-    try {
-      await _post('/auth/logout');
-    } finally {
-      _accessToken = null;
-      _refreshToken = null;
-      _userId = null;
-      _userName = null;
-      _userEmail = null;
-    }
-  }
-
-  Future<Map<String, dynamic>> getMe() async {
-    final response = await _get('/auth/me');
-    return _handleResponse(response);
   }
 
   // ─── Session ──────────────────────────────────────────
@@ -144,8 +106,8 @@ class ApiService {
       String craveItem, double latitude, double longitude) async {
     final response = await _post('/session/crave', body: {
       'crave_item': craveItem,
-      'latitude': latitude,
-      'longitude': longitude,
+      'latitude':   latitude,
+      'longitude':  longitude,
     });
     return _handleResponse(response);
   }
@@ -153,7 +115,7 @@ class ApiService {
   Future<Map<String, dynamic>> selectOption(
       String sessionId, String selectedOption) async {
     final response = await _post('/session/select', body: {
-      'session_id': sessionId,
+      'session_id':      sessionId,
       'selected_option': selectedOption,
     });
     return _handleResponse(response);
@@ -162,7 +124,7 @@ class ApiService {
   Future<Map<String, dynamic>> chooseType(
       String sessionId, String sessionType) async {
     final response = await _post('/session/choose-type', body: {
-      'session_id': sessionId,
+      'session_id':   sessionId,
       'session_type': sessionType,
     });
     return _handleResponse(response);
@@ -173,23 +135,23 @@ class ApiService {
   Future<Map<String, dynamic>> selectChallenge(
       String sessionId, String challengeDescription, int timeLimit) async {
     final response = await _post('/challenge/select', body: {
-      'session_id': sessionId,
+      'session_id':            sessionId,
       'challenge_description': challengeDescription,
-      'time_limit': timeLimit,
+      'time_limit':            timeLimit,
     });
     return _handleResponse(response);
   }
 
   Future<Map<String, dynamic>> startChallenge(String challengeId) async {
-    final response =
-        await _post('/challenge/start', body: {'challenge_id': challengeId});
+    final response = await _post('/challenge/start',
+        body: {'challenge_id': challengeId});
     return _handleResponse(response);
   }
 
   Future<Map<String, dynamic>> completeChallenge(
       String challengeId, int completionPercentage) async {
     final response = await _post('/challenge/complete', body: {
-      'challenge_id': challengeId,
+      'challenge_id':          challengeId,
       'completion_percentage': completionPercentage,
     });
     return _handleResponse(response);
@@ -204,15 +166,17 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateProfile({
     String? name,
-    int? age,
+    int?    age,
     double? height,
     double? weight,
   }) async {
     final body = <String, dynamic>{};
-    if (name != null) body['name'] = name;
-    if (age != null) body['age'] = age;
+    if (name   != null) body['name']   = name;
+    if (age    != null) body['age']    = age;
     if (height != null) body['height'] = height;
     if (weight != null) body['weight'] = weight;
+
+    if (name != null) await setUserName(name);
 
     final response = await _put('/user/profile', body: body);
     return _handleResponse(response);
@@ -223,7 +187,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  // ─── Regenerate Endpoints ─────────────────────────────
+  // ─── Regenerate endpoints ─────────────────────────────
 
   Future<Map<String, dynamic>> regenerateCraveOptions(String sessionId) async {
     final response = await _post('/session/crave/regenerate',
@@ -246,7 +210,7 @@ class ApiService {
   Future<Map<String, dynamic>> acceptHealthy(
       String sessionId, String selectedSuggestion) async {
     final response = await _post('/session/healthy/accept', body: {
-      'session_id': sessionId,
+      'session_id':          sessionId,
       'selected_suggestion': selectedSuggestion,
     });
     return _handleResponse(response);
